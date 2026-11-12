@@ -483,9 +483,15 @@ class App:
         root.update_idletasks()
         width, height = root.winfo_reqwidth(), root.winfo_reqheight()
         root.minsize(width, height)
+        screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
         extra = self._log_line_height * 4
-        if root.winfo_screenheight() >= height + extra + 160:
-            root.geometry(f"{width}x{height + extra}")
+        if screen_height >= height + extra + 200:
+            height += extra
+        # Place it ourselves: the system's default spot can push the result
+        # buttons under the taskbar.  110 px covers title bar, menu and taskbar.
+        left = max(0, (screen_width - width) // 2)
+        top = max(0, (screen_height - height - 110) // 3)
+        root.geometry(f"{width}x{height}+{left}+{top}")
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
