@@ -1,8 +1,9 @@
 name: Build Windows exe
 
-# Manual build of the standalone Windows executable. Mirrors the
-# windows-release-runtime job in ci.yml and uploads the result as an artifact;
-# it does not create a tag or a GitHub Release.
+# Manual build of the standalone Windows executables: the command-line
+# chatlog-keeper.exe (same steps as the windows-release-runtime job in ci.yml)
+# and the windowed chatlog-keeper-gui.exe. Both are uploaded as an artifact;
+# this workflow does not create a tag or a GitHub Release.
 on:
   workflow_dispatch:
   push:
@@ -89,11 +90,65 @@ jobs:
           python packaging/release_metadata.py checksum `
             --file .\dist_exe\chatlog-keeper.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Upload Windows executable
+      - name: Build windowed executable
+        shell: pwsh
+        run: python -m PyInstaller packaging/chatlog_keeper_gui.spec --noconfirm --clean --distpath dist_exe
+      - name: Self-test the windowed executable outside the build environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $executable = (Resolve-Path -LiteralPath .\dist_exe\chatlog-keeper-gui.exe).Path
+          $standaloneWorkdir = Join-Path $env:RUNNER_TEMP ("chatlog-keeper-gui-smoke-" + [Guid]::NewGuid().ToString("N"))
+          New-Item -ItemType Directory -Path $standaloneWorkdir | Out-Null
+          $report = Join-Path $standaloneWorkdir "selftest.json"
+          $originalPath = $env:PATH
+          Push-Location $standaloneWorkdir
+          try {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+            # A windowed executable has no console: wait on the process object and
+            # read what it observed (window created, real probe run) from the report.
+            $process = Start-Process -FilePath $executable -ArgumentList @("--gui-selftest", "--report", $report) -Wait -PassThru
+            if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+            if ($process.ExitCode -ne 0) { throw "windowed self-test failed" }
+          } finally {
+            $env:PATH = $originalPath
+            Pop-Location
+          }
+          python packaging/release_metadata.py checksum --file $executable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Capture a screenshot of the window
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $executable = (Resolve-Path -LiteralPath .\dist_exe\chatlog-keeper-gui.exe).Path
+          New-Item -ItemType Directory -Path .\dist_screenshot -Force | Out-Null
+          $target = Join-Path (Resolve-Path -LiteralPath .\dist_screenshot).Path "window.png"
+          $process = Start-Process -FilePath $executable -PassThru
+          Start-Sleep -Seconds 25
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save($target, [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+          & "$env:SystemRoot\System32\taskkill.exe" /PID $process.Id /T /F | Out-Null
+          exit 0
+      - name: Upload Windows executables
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chatlog-keeper-windows-x86_64
           path: |
             dist_exe/chatlog-keeper.exe
             dist_exe/chatlog-keeper.exe.sha256
+            dist_exe/chatlog-keeper-gui.exe
+            dist_exe/chatlog-keeper-gui.exe.sha256
           if-no-files-found: error
+      - name: Upload window screenshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatlog-keeper-gui-screenshot
+          path: dist_screenshot/window.png
+          if-no-files-found: warn
