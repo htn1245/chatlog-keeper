@@ -452,7 +452,7 @@ class App:
         root.rowconfigure(0, weight=1)
         self._build_menu()
 
-        outer = ttk.Frame(root, padding=14)
+        outer = ttk.Frame(root, padding=(14, 10, 14, 12))
         outer.grid(row=0, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(4, weight=1)
@@ -461,18 +461,31 @@ class App:
         ttk.Label(outer, text="导出你自己的微信 / QQ 聊天记录", font=heading_font).grid(
             row=0, column=0, sticky="w"
         )
+        recheck = ttk.Button(outer, text="重新检测", command=self.probe)
+        recheck.grid(row=0, column=1, rowspan=2, sticky="e")
+        self._busy_widgets.append(recheck)
         ttk.Label(
             outer,
             text="只读取这台电脑上的本地数据，不联网、不上传。",
             foreground="#666666",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 10))
+        ).grid(row=1, column=0, sticky="w", pady=(2, 8))
 
-        self._build_status(outer).grid(row=2, column=0, sticky="ew")
-        self._build_tabs(outer).grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        self._build_run_area(outer).grid(row=4, column=0, sticky="nsew", pady=(10, 0))
+        self._build_status(outer).grid(row=2, column=0, columnspan=2, sticky="ew")
+        self._build_tabs(outer).grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0)
+        )
+        self._build_run_area(outer).grid(
+            row=4, column=0, columnspan=2, sticky="nsew", pady=(8, 0)
+        )
 
+        # The smallest layout must fit a 768-pixel-high screen; on a taller one
+        # start with a roomier log.
         root.update_idletasks()
-        root.minsize(root.winfo_reqwidth(), root.winfo_reqheight())
+        width, height = root.winfo_reqwidth(), root.winfo_reqheight()
+        root.minsize(width, height)
+        extra = self._log_line_height * 4
+        if root.winfo_screenheight() >= height + extra + 160:
+            root.geometry(f"{width}x{height + extra}")
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -492,7 +505,7 @@ class App:
         self.root.configure(menu=menubar)
 
     def _build_status(self, parent: Any) -> Any:
-        box = ttk.LabelFrame(parent, text="本机状态", padding=10)
+        box = ttk.LabelFrame(parent, text="本机状态", padding=(10, 4, 10, 8))
         box.columnconfigure(2, weight=1)
         self._status_dots: Dict[str, Any] = {}
         self._status_texts: Dict[str, Any] = {}
@@ -517,9 +530,6 @@ class App:
             self._busy_widgets.append(button)
             self._status_dots[source] = dot
             self._status_texts[source] = text_var
-        recheck = ttk.Button(box, text="重新检测", command=self.probe)
-        recheck.grid(row=len(SOURCES), column=3, sticky="e", padx=(10, 0), pady=(8, 0))
-        self._busy_widgets.append(recheck)
         return box
 
     def _build_tabs(self, parent: Any) -> Any:
@@ -617,7 +627,7 @@ class App:
         return notebook
 
     def _build_run_area(self, parent: Any) -> Any:
-        box = ttk.LabelFrame(parent, text="运行情况", padding=10)
+        box = ttk.LabelFrame(parent, text="运行情况", padding=(10, 4, 10, 8))
         box.columnconfigure(0, weight=1)
         box.rowconfigure(2, weight=1)
 
@@ -642,14 +652,16 @@ class App:
         log_frame.grid(row=2, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
+        log_font = _derived_font(self.root, size_delta=-1)
+        self._log_line_height = int(log_font.metrics("linespace"))
         self._log = tk.Text(
             log_frame,
-            height=7,
+            height=4,
             wrap="word",
             state="disabled",
             relief="solid",
             borderwidth=1,
-            font=_derived_font(self.root, size_delta=-1),
+            font=log_font,
         )
         self._log.grid(row=0, column=0, sticky="nsew")
         scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self._log.yview)
